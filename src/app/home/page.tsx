@@ -37,40 +37,53 @@ export default function HomePage() {
 
   useEffect(() => {
     const init = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { router.replace("/"); return; }
+      try {
+        // Use getSession — never hangs unlike getUser
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user) { router.replace("/"); return; }
+        const user = session.user;
 
-      // Register push
-      await registerServiceWorker();
-      const sub = await subscribeToPush();
-      if (sub) {
-        await supabase.from("profiles").update({
-          push_subscription: JSON.stringify(sub),
-        }).eq("id", user.id);
+        // Load profile
+        const { data: prof } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        if (!prof) { router.replace("/"); return; }
+        setProfile(prof);
+
+        // Load my latest mood
+        const { data: mood } = await supabase
+          .from("mood_entries")
+          .select("*")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        setMyLatestMood(mood ?? null);
+
+        if (prof.partner_id) {
+          loadPartner(prof.partner_id);
+        }
+
+        // Register push in background — never block loading on this
+        registerServiceWorker().then(() => {
+          subscribeToPush().then((sub) => {
+            if (sub) {
+              supabase.from("profiles").update({
+                push_subscription: JSON.stringify(sub),
+              }).eq("id", user.id).then(() => {});
+            }
+          });
+        });
+
+      } catch (e) {
+        console.error("Init error:", e);
+        router.replace("/");
+      } finally {
+        setAppReady(true);
       }
-
-      // Load my profile
-      const { data: prof } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", user.id)
-        .single();
-      setProfile(prof);
-
-      // Load my latest mood
-      const { data: mood } = await supabase
-        .from("mood_entries")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      setMyLatestMood(mood ?? null);
-
-      if (prof?.partner_id) {
-        loadPartner(prof.partner_id);
-      }
-      setAppReady(true);
     };
     init();
   }, []);
@@ -154,39 +167,23 @@ export default function HomePage() {
 
   // ── Actions ───────────────────────────────────────────────────────────────
 
- const handleSaveMood = async () => {
-  if (!selectedMood || !profile) return;
-  setSaving(true);
+  const handleSaveMood = async () => {
+    if (!selectedMood || !profile) return;
+    setSaving(true);
+    setShowPicker(false);
 
-  try {
-    const { data: newMood, error } = await supabase
-      .from("mood_entries")
-      .insert({
-        user_id: profile.id,
-        mood: selectedMood,
-        note: note.trim(),
-      })
-      .select()
-      .maybeSingle();
-
-    if (error) {
-      console.error("Mood save error:", error);
-      showToast("Failed to save mood, try again");
-      return;
-    }
-
-    setMyLatestMood(newMood ?? {
-      id: "",
+    const { data: newMood } = await supabase.from("mood_entries").insert({
       user_id: profile.id,
       mood: selectedMood,
       note: note.trim(),
-      created_at: new Date().toISOString(),
-    });
+    }).select().maybeSingle();
 
-    setShowPicker(false);
+    setMyLatestMood(newMood ?? null);
     setSelectedMood(null);
     setNote("");
+    setSaving(false);
 
+    // Send push to partner via API route
     if (profile.partner_id) {
       const mood = getMood(selectedMood);
       fetch("/api/notify", {
@@ -199,13 +196,8 @@ export default function HomePage() {
         }),
       }).catch(() => {});
     }
-  } catch (e) {
-    console.error(e);
-    showToast("Something went wrong");
-  } finally {
-    setSaving(false);
-  }
-};
+  };
+
   const handleSendHug = async () => {
     if (!profile?.partner_id || hugSent) return;
     await supabase.from("hugs").insert({
@@ -466,32 +458,7 @@ export default function HomePage() {
               <div className="p-6 pb-10">
                 <div className="w-10 h-1 bg-white/15 rounded-full mx-auto mb-6" />
                 <h2 className="font-display text-xl font-bold text-center mb-2">How are you feeling?</h2>
-<div className="flex gap-3 mt-2">
-  <button
-    onClick={() => { setShowPicker(false); setSelectedMood(null); setNote(""); }}
-    className="flex-1 py-4 rounded-2xl text-white/40 text-sm font-semibold border border-white/10 bg-white/5"
-  >
-    Cancel
-  </button>
-  <motion.button
-    whileTap={{ scale: 0.96 }}
-    onClick={handleSaveMood}
-    disabled={!selectedMood || saving}
-    className="flex-[2] py-4 rounded-2xl text-white text-base font-bold disabled:opacity-30 transition-all"
-    style={{
-      background: chosenMood
-        ? `linear-gradient(135deg, ${chosenMood.color}, ${chosenMood.secondaryColor})`
-        : "rgba(255,255,255,0.08)",
-    }}
-  >
-    {saving
-      ? "Saving..."
-      : selectedMood
-      ? `OK — I'm ${getMood(selectedMood).label} ${getMood(selectedMood).emoji}`
-      : "Pick a mood first"}
-  </motion.button>
-</div>
-  
+
                 {/* Preview orb */}
                 <div className="flex justify-center my-6 h-28">
                   <AnimatePresence mode="wait">
