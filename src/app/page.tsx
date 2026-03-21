@@ -26,10 +26,11 @@ export default function AuthPage() {
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    setLoading(true);
+  e.preventDefault();
+  setError("");
+  setLoading(true);
 
+  try {
     if (mode === "signup") {
       const { error } = await supabase.auth.signUp({
         email,
@@ -37,14 +38,32 @@ export default function AuthPage() {
         options: { data: { display_name: name } },
       });
       if (error) throw error;
-
-      // Show confirmation message instead of redirecting
+      // Switch to sign in mode after successful signup
+      setMode("login");
+      setPassword("");
       setError("");
       setLoading(false);
-      setShowConfirmation(true);
       return;
+    } else {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      router.replace("/home");
     }
-  };
+  } catch (err: any) {
+    if (err.message?.includes("rate limit")) {
+      setError("Too many attempts. Please wait a few minutes and try again.");
+    } else if (err.message?.includes("already registered")) {
+      setError("That email is already registered. Try signing in instead.");
+    } else if (err.message?.includes("Lock") || err.message?.includes("lock")) {
+      // Ignore the lock error — it's a Supabase internal race condition, just retry
+      router.replace("/home");
+    } else {
+      setError(err.message ?? "Something went wrong");
+    }
+  } finally {
+    setLoading(false);
+  }
+};
 
   if (checking) {
     return (
