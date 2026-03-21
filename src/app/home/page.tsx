@@ -89,7 +89,7 @@ export default function HomePage() {
       .eq("user_id", partnerId)
       .order("created_at", { ascending: false })
       .limit(1)
-      .single();
+      .maybeSingle();
     setPartnerLatestMood(partnerMood ?? null);
   };
 

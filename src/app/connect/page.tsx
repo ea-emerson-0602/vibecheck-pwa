@@ -7,10 +7,12 @@ import { createClient } from "@/lib/supabase";
 import { BottomNav } from "@/components/BottomNav";
 import { Profile } from "@/types";
 
+const supabase = createClient();
+
 export default function ConnectPage() {
   const router = useRouter();
-  const supabase = createClient();
 
+  const [pageReady, setPageReady] = useState(false);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [partnerProfile, setPartnerProfile] = useState<Profile | null>(null);
   const [theirCode, setTheirCode] = useState("");
@@ -22,10 +24,10 @@ export default function ConnectPage() {
 
   useEffect(() => {
     const load = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { router.replace("/"); return; }
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) { router.replace("/"); return; }
 
-      const { data: prof } = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle();
+      const { data: prof } = await supabase.from("profiles").select("*").eq("id", session.user.id).maybeSingle();
       setProfile(prof);
 
       if (prof?.partner_id) {
@@ -33,6 +35,7 @@ export default function ConnectPage() {
         setPartnerProfile(partner);
         setPartnerRequestedUnmatch(partner?.unmatch_requested ?? false);
       }
+      setPageReady(true);
     };
     load();
   }, []);
@@ -142,6 +145,20 @@ export default function ConnectPage() {
     await supabase.from("profiles").update({ unmatch_requested: false }).eq("id", profile.partner_id);
     setPartnerRequestedUnmatch(false);
   };
+
+  if (!pageReady) {
+    return (
+      <main className="min-h-screen bg-ink pb-32 relative overflow-hidden">
+        <div className="relative z-10 max-w-sm mx-auto px-5 pt-14 animate-pulse">
+          <div className="h-8 w-32 bg-white/5 rounded-xl mb-1" />
+          <div className="h-4 w-48 bg-white/5 rounded-xl mb-8" />
+          <div className="h-48 bg-white/5 rounded-3xl mb-4" />
+          <div className="h-48 bg-white/5 rounded-3xl" />
+        </div>
+        <BottomNav />
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-ink pb-32 relative overflow-hidden">
