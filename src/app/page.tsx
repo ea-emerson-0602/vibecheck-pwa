@@ -16,6 +16,7 @@ export default function AuthPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(true);
+  const [showConfirmation, setShowConfirmation] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -29,24 +30,19 @@ export default function AuthPage() {
     setError("");
     setLoading(true);
 
-    try {
-      if (mode === "signup") {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: { data: { display_name: name } },
-        });
-        if (error) throw error;
-        router.replace("/home");
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-        router.replace("/home");
-      }
-    } catch (err: any) {
-      setError(err.message ?? "Something went wrong");
-    } finally {
+    if (mode === "signup") {
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { data: { display_name: name } },
+      });
+      if (error) throw error;
+
+      // Show confirmation message instead of redirecting
+      setError("");
       setLoading(false);
+      setShowConfirmation(true);
+      return;
     }
   };
 
@@ -79,8 +75,12 @@ export default function AuthPage() {
           >
             ✨
           </motion.div>
-          <h1 className="font-display text-4xl font-bold text-white tracking-tight">VibeCheck</h1>
-          <p className="text-sm text-white/40 mt-2 font-body">How are you feeling today?</p>
+          <h1 className="font-display text-4xl font-bold text-white tracking-tight">
+            VibeCheck
+          </h1>
+          <p className="text-sm text-white/40 mt-2 font-body">
+            How are you feeling today?
+          </p>
         </div>
 
         {/* Tab toggle */}
@@ -88,7 +88,10 @@ export default function AuthPage() {
           {(["login", "signup"] as const).map((m) => (
             <button
               key={m}
-              onClick={() => { setMode(m); setError(""); }}
+              onClick={() => {
+                setMode(m);
+                setError("");
+              }}
               className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
                 mode === m
                   ? "bg-purple-500/30 text-white"
@@ -148,7 +151,56 @@ export default function AuthPage() {
             {loading ? "..." : mode === "login" ? "Sign In" : "Create Account"}
           </motion.button>
         </form>
+        {/* Email confirmation popup */}
+        <AnimatePresence>
+          {showConfirmation && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 flex items-center justify-center px-6 bg-black/70 backdrop-blur-sm"
+            >
+              <motion.div
+                initial={{ scale: 0.85, opacity: 0, y: 20 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.85, opacity: 0 }}
+                transition={{ type: "spring", damping: 25, stiffness: 300 }}
+                className="w-full max-w-sm rounded-3xl p-7 text-center"
+                style={{
+                  background: "#1c1530",
+                  border: "1px solid rgba(192,132,252,0.2)",
+                }}
+              >
+                <div className="text-5xl mb-4">📬</div>
+                <h2 className="font-display text-xl font-bold text-white mb-2">
+                  Check your inbox!
+                </h2>
+                <p className="text-white/50 text-sm leading-relaxed mb-2">
+                  We sent a confirmation link to{" "}
+                  <span className="text-purple-400">{email}</span>.
+                </p>
+                <p className="text-white/35 text-xs leading-relaxed mb-6">
+                  Don't see it? Check your spam folder — it can sometimes take
+                  up to 5 minutes to arrive.
+                </p>
+                <button
+                  onClick={() => {
+                    setShowConfirmation(false);
+                    setMode("login");
+                  }}
+                  className="w-full py-3.5 rounded-2xl text-white text-sm font-bold"
+                  style={{
+                    background: "linear-gradient(135deg, #c084fc, #818cf8)",
+                  }}
+                >
+                  Got it — take me to sign in
+                </button>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </motion.div>
     </main>
+    
   );
 }
